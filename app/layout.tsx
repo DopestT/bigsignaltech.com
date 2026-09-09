@@ -1,26 +1,36 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
-import Nav from "@/components/Nav";
-import Footer from "@/components/Footer";
+import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata: Metadata = {
-  title: "Big Signal Tech",
-  description:
-    "Big Signal Tech is a YouTube channel covering the tech that actually matters — reviews, explainers, and deep dives.",
+  metadataBase: new URL("https://bigsignaltech.com"),
+  title: { default: "Free Online Video Downloader | BigSignal Tools", template: "%s | BigSignal Tools" },
+  description: "Fast, mobile-friendly online video downloader for public media you own or are authorized to save.",
+  applicationName: "BigSignal Tools",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 },
+  },
   openGraph: {
-    title: "Big Signal Tech",
-    description: "A YouTube channel covering the tech that actually matters.",
-    url: "https://bigsignaltech.com",
-    siteName: "Big Signal Tech",
+    type: "website",
+    siteName: "BigSignal Tools",
+    title: "Free Online Video Downloader | BigSignal Tools",
+    description: "Paste a media link, choose an available format, and save public content you are authorized to download.",
+    url: "/video-downloader",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Free Online Video Downloader | BigSignal Tools",
+    description: "Fast, clean media resolution from BigSignalTech.com.",
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#2563eb" };
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body>
@@ -30,9 +40,9 @@ export default function RootLayout({
           crossOrigin="anonymous"
           strategy="afterInteractive"
         />
-        <Nav />
+        <SiteHeader />
         <main>{children}</main>
-        <Footer />
+        <SiteFooter />
       </body>
     </html>
   );
