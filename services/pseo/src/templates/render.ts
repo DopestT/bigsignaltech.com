@@ -20,8 +20,8 @@ function toStringArray(value: JsonValue | undefined): string[] {
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 }
 
-function summaryParagraphs(summary: string): string {
-  return summary
+function textParagraphs(text: string): string {
+  return text
     .split(/\n{2,}/)
     .map((part) => part.trim())
     .filter(Boolean)
@@ -30,7 +30,16 @@ function summaryParagraphs(summary: string): string {
 }
 
 function renderAttributeList(attributes: JsonObject): string {
-  const hiddenKeys = new Set(["title", "description", "features", "applicationCategory", "operatingSystem", "price", "priceCurrency"]);
+  const hiddenKeys = new Set([
+    "title",
+    "description",
+    "features",
+    "technicalOverview",
+    "applicationCategory",
+    "operatingSystem",
+    "price",
+    "priceCurrency",
+  ]);
   const rows = Object.entries(attributes)
     .filter(([key, value]) => !hiddenKeys.has(key) && ["string", "number", "boolean"].includes(typeof value))
     .slice(0, 20)
@@ -84,6 +93,7 @@ export function renderPseoPage(entity: PseoEntityRow, baseUrl: string, pathPrefi
   const attrs = entity.attributes;
   const title = toText(attrs.title) ?? entity.primary_keyword;
   const summary = entity.ai_summary.trim();
+  const technicalOverview = toText(attrs.technicalOverview) ?? "";
   const description = (toText(attrs.description) ?? summary.replace(/\s+/g, " ")).slice(0, 160);
   const canonicalUrl = makeCanonical(baseUrl, pathPrefix, entity.slug);
   const features = toStringArray(attrs.features).slice(0, 12);
@@ -97,7 +107,10 @@ export function renderPseoPage(entity: PseoEntityRow, baseUrl: string, pathPrefi
   const html = [
     `<article data-pseo-entity="${entity.id}" data-category="${escapeHtml(entity.entity_category)}">`,
     `<header><p>${escapeHtml(entity.entity_category)}</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></header>`,
-    `<section aria-labelledby="overview"><h2 id="overview">Overview</h2>${summaryParagraphs(summary)}</section>`,
+    `<section aria-labelledby="overview"><h2 id="overview">Overview</h2>${textParagraphs(summary)}</section>`,
+    technicalOverview
+      ? `<section aria-labelledby="technical-overview"><h2 id="technical-overview">Technical overview</h2>${textParagraphs(technicalOverview)}</section>`
+      : "",
     features.length
       ? `<section aria-labelledby="features"><h2 id="features">Key features</h2><ul>${features.map((feature) => `<li>${escapeHtml(feature)}</li>`).join("")}</ul></section>`
       : "",
