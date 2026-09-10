@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import styles from "./LeadCapture.module.css";
 
 type MediaItem = { type?: string; url: string; filename?: string };
 type MediaResult = { ok: true; title?: string; source?: string; thumbnail?: string; items: MediaItem[] };
@@ -140,22 +141,22 @@ export default function DownloaderTool() {
             <p className="result-note">The file opens from its source or configured media processor. On iPhone/iPad, use the browser share/save controls if the file opens in a player.</p>
           </section>
 
-          <section className="lead-card" aria-label="BigSignal updates">
-            <div className="lead-copy">
-              <div className="lead-kicker">Keep the signal</div>
+          <section className={styles.card} aria-label="BigSignal updates">
+            <div className={styles.copy}>
+              <div className={styles.kicker}>Keep the signal</div>
               <h3>Get new free BigSignal tools first.</h3>
               <p>No account required. Drop your email after a successful use and we’ll send occasional product updates and new-tool launches.</p>
             </div>
             {leadSaved ? (
-              <div className="lead-success" role="status"><strong>You’re on the list.</strong><span>We’ll keep it useful and occasional.</span></div>
+              <div className={styles.success} role="status"><strong>You’re on the list.</strong><span>We’ll keep it useful and occasional.</span></div>
             ) : (
-              <form className="lead-form" onSubmit={captureLead}>
+              <form className={styles.form} onSubmit={captureLead}>
                 <label className="sr-only" htmlFor="bigsignal-lead-email">Email address</label>
                 <input id="bigsignal-lead-email" type="email" inputMode="email" autoComplete="email" value={leadEmail} onChange={(e) => setLeadEmail(e.target.value)} placeholder="you@example.com" required />
-                <div className="lead-honeypot" aria-hidden="true"><label>Company<input tabIndex={-1} autoComplete="off" value={leadCompany} onChange={(e) => setLeadCompany(e.target.value)} /></label></div>
+                <div className={styles.honeypot} aria-hidden="true"><label>Company<input tabIndex={-1} autoComplete="off" value={leadCompany} onChange={(e) => setLeadCompany(e.target.value)} /></label></div>
                 <button type="submit" disabled={leadLoading}>{leadLoading ? "Joining…" : "Keep me in the loop"}</button>
-                <p className="lead-consent">By joining, you agree to receive occasional BigSignal Tools product updates. Unsubscribe anytime.</p>
-                {leadError && <div className="lead-error" role="alert">{leadError}</div>}
+                <p className={styles.consent}>By joining, you agree to receive occasional BigSignal Tools product updates. Unsubscribe anytime.</p>
+                {leadError && <div className={styles.error} role="alert">{leadError}</div>}
               </form>
             )}
           </section>
