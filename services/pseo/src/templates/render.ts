@@ -97,8 +97,8 @@ export function renderPseoPage(entity: PseoEntityRow, baseUrl: string, pathPrefi
   const description = (toText(attrs.description) ?? summary.replace(/\s+/g, " ")).slice(0, 160);
   const canonicalUrl = makeCanonical(baseUrl, pathPrefix, entity.slug);
   const features = toStringArray(attrs.features).slice(0, 12);
-  const category = entity.entity_category.toLowerCase();
-  const isSoftware = /software|app|tool|saas|platform|utility/.test(category);
+  const category = entity.entity_category.toLowerCase().trim();
+  const isSoftware = new Set(["software", "app", "tool", "saas", "platform", "utility"]).has(category);
   const jsonLd = isSoftware
     ? softwareJsonLd(entity, title, description, canonicalUrl)
     : articleJsonLd(entity, title, description, canonicalUrl);
