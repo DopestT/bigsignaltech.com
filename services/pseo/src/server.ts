@@ -1,19 +1,23 @@
 import Fastify from "fastify";
-import { createDbPool } from "./db.js";
 import { pseoRoutes } from "./routes/pseo.js";
 import { pseoBatchRoutes } from "./routes/pseoBatch.js";
+import { SupabasePseoStore } from "./store.js";
 
-const databaseUrl = process.env.DATABASE_URL ?? "";
 const internalApiKey = process.env.INTERNAL_API_KEY ?? "";
 const publicSiteUrl = process.env.PUBLIC_SITE_URL ?? "https://bigsignaltech.com";
 const pathPrefix = process.env.PSEO_PATH_PREFIX ?? "/tools";
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
 
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
 if (!internalApiKey) throw new Error("INTERNAL_API_KEY is required");
 
-const db = createDbPool(databaseUrl);
+const store = new SupabasePseoStore({
+  url: process.env.SUPABASE_URL ?? "",
+  anonKey: process.env.SUPABASE_ANON_KEY ?? "",
+  token: process.env.PSEO_DB_TOKEN ?? "",
+  timeoutMs: 10_000,
+});
+
 const app = Fastify({
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
@@ -31,20 +35,26 @@ const app = Fastify({
   keepAliveTimeout: 72_000,
 });
 
-app.get("/health", async () => {
-  await db.query("SELECT 1");
-  return { ok: true };
+app.get("/health", async (_request, reply) => {
+  try {
+    const ok = await store.health();
+    if (!ok) return reply.code(503).send({ ok: false, store: "unavailable" });
+    return reply.code(200).send({ ok: true, store: "perception" });
+  } catch (error) {
+    app.log.error({ err: error }, "Perception pSEO store health check failed");
+    return reply.code(503).send({ ok: false, store: "unavailable" });
+  }
 });
 
 await app.register(pseoRoutes, {
-  db,
+  store,
   internalApiKey,
   publicSiteUrl,
   pathPrefix,
 });
 
 await app.register(pseoBatchRoutes, {
-  db,
+  store,
   internalApiKey,
   publicSiteUrl,
   pathPrefix,
@@ -62,7 +72,6 @@ await app.register(pseoBatchRoutes, {
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "shutting down");
   await app.close();
-  await db.end();
   process.exit(0);
 };
 
@@ -73,6 +82,5 @@ try {
   await app.listen({ port, host });
 } catch (error) {
   app.log.error(error);
-  await db.end();
   process.exit(1);
 }
