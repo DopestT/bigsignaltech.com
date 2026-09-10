@@ -8,6 +8,14 @@ export interface UpsertEntityInput {
   ai_summary: string;
 }
 
+export interface PseoEntityCatalogItem {
+  id: number;
+  slug: string;
+  primaryKeyword: string;
+  entityCategory: string;
+  updatedAt: string;
+}
+
 export type ClaimBatchResult =
   | { state: "claimed" }
   | { state: "processing" }
@@ -18,6 +26,7 @@ export interface PseoStore {
   health(): Promise<boolean>;
   getEntityById(id: number): Promise<PseoEntityRow | null>;
   getEntityBySlug(slug: string): Promise<PseoEntityRow | null>;
+  listEntities(): Promise<PseoEntityCatalogItem[]>;
   claimBatch(key: string, hash: string): Promise<ClaimBatchResult>;
   completeBatch(key: string, payload: Record<string, unknown>): Promise<void>;
   failBatch(key: string, error: string): Promise<void>;
@@ -42,6 +51,14 @@ interface RawEntity {
   updated_at: string;
 }
 
+interface RawCatalogItem {
+  id: number;
+  slug: string;
+  primary_keyword: string;
+  entity_category: string;
+  updated_at: string;
+}
+
 function normalizeEntity(value: unknown): PseoEntityRow {
   if (!value || typeof value !== "object") throw new Error("Invalid pSEO entity response");
   const row = value as RawEntity;
@@ -58,6 +75,22 @@ function normalizeEntity(value: unknown): PseoEntityRow {
     ai_summary: row.ai_summary ?? "",
     is_indexed: Boolean(row.is_indexed),
     updated_at: new Date(row.updated_at),
+  };
+}
+
+function normalizeCatalogItem(value: unknown): PseoEntityCatalogItem {
+  if (!value || typeof value !== "object") throw new Error("Invalid pSEO catalog response");
+  const row = value as RawCatalogItem;
+  if (!Number.isInteger(row.id) || typeof row.slug !== "string" || typeof row.updated_at !== "string") {
+    throw new Error("Malformed pSEO catalog response");
+  }
+
+  return {
+    id: row.id,
+    slug: row.slug,
+    primaryKeyword: row.primary_keyword,
+    entityCategory: row.entity_category,
+    updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
 
@@ -120,6 +153,12 @@ export class SupabasePseoStore implements PseoStore {
   async getEntityBySlug(slug: string): Promise<PseoEntityRow | null> {
     const raw = await this.rpc<unknown>("pseo_get_entity_by_slug", { p_slug: slug });
     return raw === null ? null : normalizeEntity(raw);
+  }
+
+  async listEntities(): Promise<PseoEntityCatalogItem[]> {
+    const raw = await this.rpc<unknown[]>("pseo_list_entities", {});
+    if (!Array.isArray(raw)) throw new Error("Invalid catalog response from Perception pSEO store");
+    return raw.map(normalizeCatalogItem);
   }
 
   async claimBatch(key: string, hash: string): Promise<ClaimBatchResult> {
