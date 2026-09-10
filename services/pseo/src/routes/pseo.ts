@@ -1,11 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import type { Pool } from "pg";
+import type { PseoStore } from "../store.js";
 import { renderPseoPage } from "../templates/render.js";
-import type { PseoEntityRow } from "../types/pseo.js";
 
 interface PseoRouteOptions {
-  db: Pool;
+  store: PseoStore;
   internalApiKey: string;
   publicSiteUrl: string;
   pathPrefix: string;
@@ -29,17 +28,6 @@ function authorized(request: FastifyRequest, expected: string): boolean {
   const provided = (Array.isArray(headerKey) ? headerKey[0] : headerKey) ?? bearer ?? "";
   return Boolean(expected) && secureEquals(provided, expected);
 }
-
-const selectEntity = {
-  name: "pseo-entity-by-id-v1",
-  text: `
-    SELECT id, slug, primary_keyword, entity_category, attributes,
-           ai_summary, is_indexed, updated_at
-    FROM pseo_entities
-    WHERE id = $1
-    LIMIT 1
-  `,
-};
 
 export const pseoRoutes: FastifyPluginAsync<PseoRouteOptions> = async (fastify, options) => {
   if (!options.internalApiKey) throw new Error("INTERNAL_API_KEY is required");
@@ -68,11 +56,7 @@ export const pseoRoutes: FastifyPluginAsync<PseoRouteOptions> = async (fastify, 
       reply.header("X-Content-Type-Options", "nosniff");
 
       try {
-        const result = await options.db.query<PseoEntityRow>({
-          ...selectEntity,
-          values: [request.body.entityId],
-        });
-        const entity = result.rows[0];
+        const entity = await options.store.getEntityById(request.body.entityId);
 
         if (!entity) {
           return reply.code(404).send({
@@ -96,6 +80,39 @@ export const pseoRoutes: FastifyPluginAsync<PseoRouteOptions> = async (fastify, 
       } catch (error) {
         request.log.error({ err: error, entityId: request.body.entityId }, "pSEO page generation failed");
         return reply.code(500).send({ ok: false, error: "generation_failed" });
+      }
+    },
+  );
+
+  fastify.get<{ Params: { slug: string } }>(
+    "/api/public/page/:slug",
+    {
+      schema: {
+        params: {
+          type: "object",
+          additionalProperties: false,
+          required: ["slug"],
+          properties: {
+            slug: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 255 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
+      reply.header("X-Content-Type-Options", "nosniff");
+
+      try {
+        const entity = await options.store.getEntityBySlug(request.params.slug);
+        if (!entity || !entity.ai_summary.trim()) {
+          return reply.code(404).send({ ok: false, error: "page_not_found" });
+        }
+
+        const page = renderPseoPage(entity, options.publicSiteUrl, options.pathPrefix);
+        return reply.code(200).send({ ok: true, ...page });
+      } catch (error) {
+        request.log.error({ err: error, slug: request.params.slug }, "public pSEO page read failed");
+        return reply.code(500).send({ ok: false, error: "page_read_failed" });
       }
     },
   );
