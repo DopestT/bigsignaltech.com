@@ -1,12 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import type { Pool } from "pg";
 import { generateEntityContent } from "../services/content.js";
 import { fetchLiveSearchMetrics, type PaidCompetition } from "../services/dataforseo.js";
 import { dispatchIndexNowBatches } from "../services/indexnow.js";
 import { publishGeneratedPages, verifyPublishedUrls } from "../services/publisher.js";
+import type { PseoStore, UpsertEntityInput } from "../store.js";
 import { renderPseoPage } from "../templates/render.js";
-import type { GeneratedPagePayload, PseoEntityRow } from "../types/pseo.js";
+import type { GeneratedPagePayload } from "../types/pseo.js";
 
 interface BatchItem {
   targetKeyword: string;
@@ -46,7 +46,7 @@ interface PreparedItem {
 }
 
 interface PseoBatchRouteOptions {
-  db: Pool;
+  store: PseoStore;
   internalApiKey: string;
   publicSiteUrl: string;
   pathPrefix: string;
@@ -59,12 +59,6 @@ interface PseoBatchRouteOptions {
   indexNowHost: string;
   indexNowKey: string;
   indexNowKeyLocation: string;
-}
-
-interface StoredRun {
-  request_hash: string;
-  status: "processing" | "completed" | "failed";
-  response_payload: Record<string, unknown> | null;
 }
 
 class RouteError extends Error {
@@ -131,81 +125,6 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, worker: (item:
   await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, () => runner()));
   return results;
 }
-
-async function claimRun(db: Pool, key: string, hash: string): Promise<Record<string, unknown> | null> {
-  const inserted = await db.query(
-    `INSERT INTO pseo_batch_runs (idempotency_key, request_hash, status)
-     VALUES ($1, $2, 'processing')
-     ON CONFLICT (idempotency_key) DO NOTHING
-     RETURNING idempotency_key`,
-    [key, hash],
-  );
-
-  if (inserted.rowCount === 1) return null;
-
-  const existingResult = await db.query<StoredRun>(
-    `SELECT request_hash, status, response_payload
-     FROM pseo_batch_runs
-     WHERE idempotency_key = $1
-     LIMIT 1`,
-    [key],
-  );
-  const existing = existingResult.rows[0];
-  if (!existing) throw new RouteError(409, "idempotency_race", "Unable to claim idempotency key");
-  if (existing.request_hash !== hash) {
-    throw new RouteError(409, "idempotency_conflict", "Idempotency key was already used with a different payload");
-  }
-  if (existing.status === "completed" && existing.response_payload) return existing.response_payload;
-  if (existing.status === "processing") {
-    throw new RouteError(409, "batch_in_progress", "A batch with this idempotency key is already processing");
-  }
-
-  await db.query(
-    `UPDATE pseo_batch_runs
-     SET status = 'processing', error_message = NULL, response_payload = NULL, updated_at = NOW()
-     WHERE idempotency_key = $1`,
-    [key],
-  );
-  return null;
-}
-
-async function completeRun(db: Pool, key: string, payload: Record<string, unknown>): Promise<void> {
-  await db.query(
-    `UPDATE pseo_batch_runs
-     SET status = 'completed', response_payload = $2::jsonb, error_message = NULL, updated_at = NOW()
-     WHERE idempotency_key = $1`,
-    [key, JSON.stringify(payload)],
-  );
-}
-
-async function failRun(db: Pool, key: string, error: unknown): Promise<void> {
-  const message = error instanceof Error ? error.message.slice(0, 2000) : "Unknown batch failure";
-  await db.query(
-    `UPDATE pseo_batch_runs
-     SET status = 'failed', error_message = $2, updated_at = NOW()
-     WHERE idempotency_key = $1`,
-    [key, message],
-  ).catch(() => undefined);
-}
-
-const upsertEntitySql = `
-  INSERT INTO pseo_entities (
-    slug, primary_keyword, entity_category, attributes, ai_summary, is_indexed, updated_at
-  )
-  VALUES ($1, $2, $3, $4::jsonb, $5, FALSE, NOW())
-  ON CONFLICT (slug) DO UPDATE SET
-    primary_keyword = EXCLUDED.primary_keyword,
-    entity_category = EXCLUDED.entity_category,
-    attributes = pseo_entities.attributes || EXCLUDED.attributes,
-    ai_summary = CASE
-      WHEN EXCLUDED.ai_summary <> '' THEN EXCLUDED.ai_summary
-      ELSE pseo_entities.ai_summary
-    END,
-    is_indexed = FALSE,
-    updated_at = NOW()
-  RETURNING id, slug, primary_keyword, entity_category, attributes,
-            ai_summary, is_indexed, updated_at
-`;
 
 const bodySchema = {
   type: "object",
@@ -281,8 +200,16 @@ export const pseoBatchRoutes: FastifyPluginAsync<PseoBatchRouteOptions> = async 
     let claimed = false;
 
     try {
-      const replay = await claimRun(options.db, idempotencyKey, hash);
-      if (replay) return reply.code(200).send({ ...replay, replayed: true });
+      const claim = await options.store.claimBatch(idempotencyKey, hash);
+      if (claim.state === "replay") {
+        return reply.code(200).send({ ...claim.response, replayed: true });
+      }
+      if (claim.state === "conflict") {
+        throw new RouteError(409, "idempotency_conflict", "Idempotency key was already used with a different payload");
+      }
+      if (claim.state === "processing") {
+        throw new RouteError(409, "batch_in_progress", "A batch with this idempotency key is already processing");
+      }
       claimed = true;
 
       const source = request.body.source?.trim() || "n8n";
@@ -366,44 +293,24 @@ export const pseoBatchRoutes: FastifyPluginAsync<PseoBatchRouteOptions> = async 
         };
       });
 
-      const client = await options.db.connect();
-      const rows: PseoEntityRow[] = [];
-      try {
-        await client.query("BEGIN");
-        for (let index = 0; index < prepared.length; index += 1) {
-          const item = prepared[index];
-          const slug = slugs[index];
-          if (!item || !slug) continue;
+      const upserts: UpsertEntityInput[] = prepared.map((item, index) => ({
+        slug: slugs[index] ?? `entity-${index}`,
+        primary_keyword: item.targetKeyword,
+        entity_category: item.category,
+        attributes: {
+          searchVolume: item.searchVolume,
+          cpc: item.cpc,
+          competition: item.competition,
+          competitionIndex: item.competitionIndex,
+          technicalOverview: item.technicalOverview,
+          metricSource: enrichMetrics ? "dataforseo-or-upstream" : "upstream",
+          source,
+          processedAt: new Date().toISOString(),
+        },
+        ai_summary: item.aiSummary,
+      }));
 
-          const attributes = {
-            searchVolume: item.searchVolume,
-            cpc: item.cpc,
-            competition: item.competition,
-            competitionIndex: item.competitionIndex,
-            technicalOverview: item.technicalOverview,
-            metricSource: enrichMetrics ? "dataforseo-or-upstream" : "upstream",
-            source,
-            processedAt: new Date().toISOString(),
-          };
-
-          const result = await client.query<PseoEntityRow>(upsertEntitySql, [
-            slug,
-            item.targetKeyword,
-            item.category,
-            JSON.stringify(attributes),
-            item.aiSummary,
-          ]);
-          const row = result.rows[0];
-          if (row) rows.push(row);
-        }
-        await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
-
+      const rows = await options.store.upsertEntities(upserts);
       const pages: GeneratedPagePayload[] = rows
         .filter((row) => row.ai_summary.trim().length > 0)
         .map((row) => renderPseoPage(row, options.publicSiteUrl, options.pathPrefix));
@@ -462,15 +369,22 @@ export const pseoBatchRoutes: FastifyPluginAsync<PseoBatchRouteOptions> = async 
         publishedCount: publishedUrls.length,
         verifiedCount: verifiedUrls.length,
         indexNowSubmitted,
-        entities: rows.map((row) => ({ id: row.id, slug: row.slug, url: pages.find((page) => page.entity.id === row.id)?.seo.canonicalUrl ?? null })),
+        entities: rows.map((row) => ({
+          id: row.id,
+          slug: row.slug,
+          url: pages.find((page) => page.entity.id === row.id)?.seo.canonicalUrl ?? null,
+        })),
         warnings,
         ...(includeGeneratedPages ? { pages } : {}),
       };
 
-      await completeRun(options.db, idempotencyKey, responsePayload);
+      await options.store.completeBatch(idempotencyKey, responsePayload);
       return reply.code(200).send(responsePayload);
     } catch (error) {
-      if (claimed) await failRun(options.db, idempotencyKey, error);
+      if (claimed) {
+        const message = error instanceof Error ? error.message.slice(0, 2000) : "Unknown batch failure";
+        await options.store.failBatch(idempotencyKey, message).catch(() => undefined);
+      }
       request.log.error({ err: error, idempotencyKey }, "pSEO batch pipeline failed");
       if (error instanceof RouteError) {
         return reply.code(error.statusCode).send({ ok: false, error: error.code, message: error.message });
