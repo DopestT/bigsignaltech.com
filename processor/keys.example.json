@@ -1,0 +1,6 @@
+{
+  "REPLACE-WITH-A-RANDOM-UUID-V4": {
+    "limit": 30,
+    "allowedServices": ["all"]
+  }
+}
