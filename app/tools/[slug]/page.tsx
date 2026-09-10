@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AdSlot from "@/components/AdSlot";
+import styles from "./page.module.css";
 
 export const revalidate = 300;
 
@@ -87,24 +88,24 @@ export default async function PseoToolPage({ params }: { params: Promise<{ slug:
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
-      <div className="container pseo-page-shell">
-        <nav className="pseo-breadcrumbs" aria-label="Breadcrumb">
+      <div className={`container ${styles.shell}`}>
+        <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
           <Link href="/video-downloader">BigSignal Tools</Link>
           <span aria-hidden="true">/</span>
           <span>{page.seo.entityCategory}</span>
         </nav>
 
-        <div className="pseo-content" dangerouslySetInnerHTML={{ __html: page.content.html }} />
+        <div className={styles.content} dangerouslySetInnerHTML={{ __html: page.content.html }} />
 
-        <section className="pseo-primary-action" aria-labelledby="pseo-primary-action-title">
+        <section className={styles.action} aria-labelledby="pseo-primary-action-title">
           <h2 id="pseo-primary-action-title">Ready to use BigSignal?</h2>
           <p>Open the downloader, paste a public media URL, and choose an available format.</p>
-          <Link className="button primary" href="/video-downloader">Open Video Downloader</Link>
+          <Link className={styles.actionLink} href="/video-downloader">Open Video Downloader</Link>
         </section>
 
         <AdSlot />
 
-        <p className="legal-note">
+        <p className={styles.legal}>
           Download only public media you own or are authorized to save. BigSignal does not bypass DRM, paywalls, authentication, or other technical protections.
         </p>
       </div>
