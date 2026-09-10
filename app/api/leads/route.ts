@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 
 const RESEND_SEGMENT_ID = "18f84f4c-b57c-4a89-9f38-0079d12bd87b";
 const RESEND_TOPIC_ID = "f519c4d9-a926-4276-8537-ae3cd343aae5";
+const RESEND_EVENT_NAME = "bigsignal.lead.captured";
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT = 5;
 const buckets = new Map<string, { count: number; resetAt: number }>();
@@ -48,6 +49,22 @@ async function resend(path: string, init: RequestInit) {
   });
 }
 
+async function queueFollowUp(email: string, source: string, landingPage: string, platform: string) {
+  try {
+    const response = await resend("/events/send", {
+      method: "POST",
+      body: JSON.stringify({
+        event: RESEND_EVENT_NAME,
+        email,
+        payload: { source, landingPage, platform },
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
   if (isRateLimited(req)) {
@@ -85,7 +102,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (create.ok) {
-      return NextResponse.json({ ok: true }, { status: 200, headers });
+      const automationQueued = await queueFollowUp(email, source, landingPage, platform);
+      return NextResponse.json({ ok: true, automationQueued }, { status: 200, headers });
     }
 
     if (create.status !== 409) {
@@ -117,7 +135,8 @@ export async function POST(req: NextRequest) {
       throw new Error("Unable to update this contact.");
     }
 
-    return NextResponse.json({ ok: true }, { status: 200, headers });
+    const automationQueued = await queueFollowUp(email, source, landingPage, platform);
+    return NextResponse.json({ ok: true, automationQueued }, { status: 200, headers });
   } catch (error) {
     if (error instanceof Error && error.message === "lead_capture_not_configured") {
       return NextResponse.json({ ok: false, error: "Customer capture is being connected. Please try again shortly." }, { status: 503, headers });
