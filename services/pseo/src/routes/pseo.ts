@@ -84,6 +84,19 @@ export const pseoRoutes: FastifyPluginAsync<PseoRouteOptions> = async (fastify, 
     },
   );
 
+  fastify.get("/api/public/slugs", async (request, reply) => {
+    reply.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
+    reply.header("X-Content-Type-Options", "nosniff");
+
+    try {
+      const entities = await options.store.listEntities();
+      return reply.code(200).send({ ok: true, count: entities.length, entities });
+    } catch (error) {
+      request.log.error({ err: error }, "public pSEO slug catalog read failed");
+      return reply.code(500).send({ ok: false, error: "catalog_read_failed" });
+    }
+  });
+
   fastify.get<{ Params: { slug: string } }>(
     "/api/public/page/:slug",
     {
