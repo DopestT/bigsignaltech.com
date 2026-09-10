@@ -29,8 +29,8 @@ const CONTENT_SCHEMA = {
   additionalProperties: false,
   required: ["aiSummary", "technicalOverview"],
   properties: {
-    aiSummary: { type: "string", minLength: 300, maxLength: 1800 },
-    technicalOverview: { type: "string", minLength: 500, maxLength: 3200 },
+    aiSummary: { type: "string" },
+    technicalOverview: { type: "string" },
   },
 } as const;
 
