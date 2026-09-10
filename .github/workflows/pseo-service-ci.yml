@@ -1,0 +1,37 @@
+name: pSEO Service CI
+
+on:
+  push:
+    paths:
+      - "services/pseo/**"
+      - ".github/workflows/pseo-service-ci.yml"
+  pull_request:
+    paths:
+      - "services/pseo/**"
+      - ".github/workflows/pseo-service-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/pseo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/pseo/package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript build
+        run: npm run build
+      - name: Build container
+        run: docker build -t bigsignal-pseo:ci .
