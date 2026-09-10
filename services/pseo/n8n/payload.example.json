@@ -1,0 +1,21 @@
+{
+  "workflowRunId": "n8n-{{$execution.id}}-batch-{{$runIndex}}",
+  "source": "n8n",
+  "items": [
+    {
+      "targetKeyword": "youtube video downloader",
+      "category": "web utility",
+      "searchVolume": 0,
+      "cpc": 0,
+      "competition": null,
+      "competitionIndex": null
+    }
+  ],
+  "options": {
+    "enrichMetrics": true,
+    "generateContent": true,
+    "publish": false,
+    "dispatchIndexNow": false,
+    "includeGeneratedPages": true
+  }
+}
