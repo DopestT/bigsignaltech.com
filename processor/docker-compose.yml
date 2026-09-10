@@ -1,0 +1,15 @@
+services:
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:11
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      API_URL: ${API_URL}
+      API_KEY_URL: file:///keys.json
+      API_AUTH_REQUIRED: "1"
+      API_RATE_LIMIT: "30"
+      CORS_WILDCARD: "0"
+      CORS_URL: ${WEB_ORIGIN}
+    volumes:
+      - ./keys.json:/keys.json:ro
