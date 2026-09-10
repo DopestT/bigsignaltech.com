@@ -71,16 +71,15 @@ async function verifyOne(url: string, timeoutMs: number): Promise<{ url: string;
     let response = await fetch(url, {
       method: "HEAD",
       redirect: "follow",
-      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
       signal: controller.signal,
     });
 
     if (response.status === 405 || response.status === 501) {
       response = await fetch(url, {
         method: "GET",
-        headers: { Range: "bytes=0-0" },
+        headers: { Range: "bytes=0-0", "Cache-Control": "no-cache" },
         redirect: "follow",
-        cache: "no-store",
         signal: controller.signal,
       });
     }
